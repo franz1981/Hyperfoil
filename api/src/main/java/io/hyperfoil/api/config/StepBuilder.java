@@ -124,6 +124,10 @@ public interface StepBuilder<S extends StepBuilder<S>> extends BuilderBase<S> {
          this.action = action;
       }
 
+      public Action action() {
+         return action;
+      }
+
       @Override
       public boolean invoke(Session session) {
          action.run(session);
