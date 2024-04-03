@@ -261,13 +261,16 @@ public class AgentVerticle extends AbstractVerticle {
          runner.visitConnectionStats(connectionStatsSender);
          connectionStatsSender.send();
       });
-
-      runner.openConnections(result -> {
-         if (result.succeeded()) {
-            eb.send(Feeds.RESPONSE, new AgentReadyMessage(deploymentID(), runId));
-         } else {
-            eb.send(Feeds.RESPONSE, new ErrorMessage(deploymentID(), runId, result.cause(), true));
-         }
+      // we cannot assume openConnections to be non-blocking!
+      vertx.executeBlocking(() -> {
+         runner.openConnections(result -> {
+            if (result.succeeded()) {
+               eb.send(Feeds.RESPONSE, new AgentReadyMessage(deploymentId, runId));
+            } else {
+               eb.send(Feeds.RESPONSE, new ErrorMessage(deploymentId, runId, result.cause(), true));
+            }
+         });
+         return null;
       });
    }
 }
