@@ -1,0 +1,13 @@
+name: single-request
+http:
+  host: http://[::1]:8080
+  sharedConnections: 1
+phases:
+  - example:
+      atOnce:
+        users: 1
+        scenario:
+          - test:
+              - httpRequest:
+                  GET: /
+                  sync: true

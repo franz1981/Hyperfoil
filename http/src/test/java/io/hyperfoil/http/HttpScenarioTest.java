@@ -49,7 +49,7 @@ public abstract class HttpScenarioTest extends BaseScenarioTest {
       }
       Promise<Void> promise = Promise.promise();
       server = vertx.createHttpServer(options).requestHandler(router)
-            .listen(0, "localhost", ctx.asyncAssertSuccess(srv -> {
+            .listen(serverPort(), serverHost(), ctx.asyncAssertSuccess(srv -> {
                initWithServer(tls);
                promise.complete();
             }));
@@ -57,6 +57,14 @@ public abstract class HttpScenarioTest extends BaseScenarioTest {
    }
 
    // override me
+   protected String serverHost() {
+      return "localhost";
+   }
+
+   protected int serverPort() {
+      return 0;
+   }
+
    protected boolean useHttps() {
       return false;
    }
