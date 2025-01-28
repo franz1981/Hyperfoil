@@ -4,6 +4,7 @@ import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Function;
 
 import org.apache.logging.log4j.LogManager;
@@ -36,7 +37,7 @@ public abstract class JsonParser implements Serializable {
    @Visitor.Ignore
    private final StreamQueue.Consumer<Context, Session> record = JsonParser.this::record;
 
-   public JsonParser(String query, boolean delete, Transformer replace, Processor processor) {
+      public JsonParser(String query, boolean delete, Transformer replace, Processor processor) {
       this.query = query;
       this.delete = delete;
       this.replace = replace;
@@ -178,8 +179,15 @@ public abstract class JsonParser implements Serializable {
       int lastOutputIndex; // last byte we have written out
       int safeOutputIndex; // last byte we could definitely write out
       ByteStream[] pool = new ByteStream[MAX_PARTS];
-      protected final ByteBuf replaceBuffer = PooledByteBufAllocator.DEFAULT.buffer();
+      private ByteBuf replaceBuffer;
       final StreamQueue.Consumer<Void, Session> replaceConsumer = this::replaceConsumer;
+
+      protected final ByteBuf acquireReplaceBuffer() {
+         if (replaceBuffer != null) {
+            replaceBuffer =  PooledByteBufAllocator.DEFAULT.buffer();
+         }
+         return replaceBuffer;
+      }
 
       protected Context(Function<Context, ByteStream> byteStreamSupplier) {
          for (int i = 0; i < pool.length; ++i) {
@@ -208,12 +216,16 @@ public abstract class JsonParser implements Serializable {
          lastOutputIndex = 0;
          safeOutputIndex = 0;
          stream.reset();
-         replaceBuffer.clear();
+         if (replaceBuffer != null) {
+            replaceBuffer.release();
+         }
       }
 
       @Override
       public void destroy() {
-         replaceBuffer.release();
+         if (replaceBuffer != null) {
+            replaceBuffer.release();
+         }
          stream.reset();
       }
 
@@ -430,6 +442,7 @@ public abstract class JsonParser implements Serializable {
             if (replace != null) {
                // The buffer cannot be overwritten as if the processor is caching input
                // (this happens when we're defragmenting) we would overwrite the underlying data
+               acquireReplaceBuffer();
                replaceBuffer.readerIndex(replaceBuffer.writerIndex());
                stream.consume(valueStartIndex, end, replaceConsumer, null, session, true);
                // If the result is empty, don't write the key
@@ -480,6 +493,7 @@ public abstract class JsonParser implements Serializable {
       protected MultiProcessor.Builder<S, ?> processors = new MultiProcessor.Builder<>(self());
       protected StoreShortcuts<S> storeShortcuts = new StoreShortcuts<>(self());
 
+      @Override
       public void accept(Processor.Builder storeProcessor) {
          processors.processor(storeProcessor);
       }

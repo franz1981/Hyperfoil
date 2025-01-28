@@ -81,7 +81,7 @@ public class JsonHandler extends JsonParser implements Processor, ResourceUtiliz
       @Override
       protected void replaceConsumer(Void ignored, Session session, ByteStream data, int offset, int length,
             boolean lastFragment) {
-         replace.transform(session, ((ByteBufByteStream) data).buffer, offset, length, lastFragment, replaceBuffer);
+         replace.transform(session, ((ByteBufByteStream) data).buffer, offset, length, lastFragment, acquireReplaceBuffer());
       }
    }
 
