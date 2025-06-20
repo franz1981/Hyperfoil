@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.LogManager;
@@ -34,7 +35,7 @@ class SharedConnectionPool extends ConnectionPoolStats implements HttpConnection
 
    private final HttpClientPoolImpl clientPool;
    private final ArrayList<HttpConnection> connections = new ArrayList<>();
-   private final ArrayDeque<HttpConnection> available;
+   private final ArrayList<HttpConnection> available;
    private final List<HttpConnection> temporaryInFlight;
    private final ConnectionReceiver handleNewConnection = this::handleNewConnection;
    private final Runnable checkCreateConnections = this::checkCreateConnections;
@@ -58,7 +59,7 @@ class SharedConnectionPool extends ConnectionPoolStats implements HttpConnection
       this.clientPool = clientPool;
       this.sizeConfig = sizeConfig;
       this.eventLoop = eventLoop;
-      this.available = new ArrayDeque<>(sizeConfig.max());
+      this.available = new ArrayList<>(sizeConfig.max());
       this.temporaryInFlight = new ArrayList<>(sizeConfig.max());
    }
 
@@ -67,11 +68,30 @@ class SharedConnectionPool extends ConnectionPoolStats implements HttpConnection
       return clientPool;
    }
 
+   private HttpConnection acquireAvailable() {
+      int size = available.size();
+      if (size == 0) {
+         return null;
+      }
+      if (size == 1) {
+         // we have only one connection available, no need to randomize
+         return available.remove(0);
+      }
+      int toAcquire = ThreadLocalRandom.current().nextInt(size);
+      var last = available.remove(size - 1);
+      if (toAcquire == size - 1) {
+         // we acquired the last element, no need to move it
+         return last;
+      }
+      // move the last element to replace the acquired one
+      return available.set(toAcquire, last);
+   }
+
    private HttpConnection acquireNow(boolean exclusiveConnection) {
       assert eventLoop.inEventLoop();
       try {
          for (;;) {
-            HttpConnection connection = available.pollFirst();
+            HttpConnection connection = acquireAvailable();
             if (connection == null) {
                log.debug("No connection to {} available, currently used {}", authority, usedConnections.current());
                return null;
@@ -120,14 +140,9 @@ class SharedConnectionPool extends ConnectionPoolStats implements HttpConnection
 
    @Override
    public void afterRequestSent(HttpConnection connection) {
-      // Move it to the back of the queue if it is still available (do not prefer it for subsequent requests)
       if (connection.isAvailable()) {
-         if (connection.inFlight() == 0) {
-            // The request was not executed in the end (response was cached)
-            available.addFirst(connection);
-         } else {
-            available.addLast(connection);
-         }
+         // TODO If the request was not executed in the end (response was cached i.e. infFlight == 0), we would like to make this to be consumed next time
+         available.add(connection);
       }
    }
 
@@ -138,13 +153,8 @@ class SharedConnectionPool extends ConnectionPoolStats implements HttpConnection
       }
       if (becameAvailable) {
          assert !connection.isClosed();
-         if (connection.inFlight() == 0) {
-            // We are adding to the beginning of the queue to prefer reusing connections rather than cycling
-            // too many often-idle connections
-            available.addFirst(connection);
-         } else {
-            available.addLast(connection);
-         }
+         // TODO we would like to make this to be consumed next time instead of distributing it across maybe other idle connections
+         available.add(connection);
       }
       if (afterRequest) {
          inFlight.decrementUsed();
