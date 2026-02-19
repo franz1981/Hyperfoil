@@ -10,11 +10,12 @@ public abstract class FunctionalRateGenerator extends BaseRateGenerator {
       if (elapsedTimeNs < fireTimeNs) {
          return (long) Math.ceil(fireTimeNs);
       }
-      final long fireTimes = computeFireTimes(elapsedTimeNs) + 1;
-      final double nextFireTimeNs = computeFireTimeNs(fireTimes);
+      final long pastFireTimes = computeFireTimes(elapsedTimeNs);
+      final long nextFireTimes = pastFireTimes + 1;
+      final double nextFireTimeNs = computeFireTimeNs(nextFireTimes);
       fireTimeNs = nextFireTimeNs;
-      long missingFireTimes = fireTimes - this.fireTimes;
-      this.fireTimes = fireTimes;
+      long missingFireTimes = pastFireTimes - this.fireTimes;
+      this.fireTimes = pastFireTimes;
       listener.onFireTimes(missingFireTimes);
       return (long) Math.ceil(nextFireTimeNs);
    }
