@@ -1,6 +1,7 @@
 package io.hyperfoil.core.impl.rate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import org.apache.commons.math3.distribution.ExponentialDistribution;
@@ -53,12 +54,25 @@ public abstract class RateGeneratorTest {
          fireTimesCounter.fireTimes = 0;
          final var nextFireTimeNs = userGenerator.computeNextFireTime(userGenerator.lastComputedFireTimeNs(), fireTimesCounter);
          final long fireTimesAfter = userGenerator.fireTimes();
-         assertEquals(1, fireTimesCounter.fireTimes);
-         assertEquals(1, fireTimesAfter - fireTimesBefore);
+         if (i == 0) {
+            // FunctionalRateGenerator emits 0 fires at elapsed=0 (future event
+            // returned for scheduling only). SequentialRateGenerator emits 1
+            // because its while loop fires at the initial fire time (0ns).
+            assertTrue(fireTimesCounter.fireTimes <= 1);
+            assertEquals(fireTimesCounter.fireTimes, fireTimesAfter - fireTimesBefore);
+         } else {
+            assertEquals(1, fireTimesCounter.fireTimes);
+            assertEquals(1, fireTimesAfter - fireTimesBefore);
+         }
          assertEquals(nextFireTimeNs, userGenerator.lastComputedFireTimeNs(), 0.0);
          fireTimeSamples[i] = nextFireTimeNs;
       }
-      assertEquals(samples(), userGenerator.fireTimes());
+      // FunctionalRateGenerator: last returned fire time is a future scheduling event,
+      // so fireTimes() = samples - 1. SequentialRateGenerator: all fire times are
+      // emitted, so fireTimes() = samples.
+      long expectedFireTimes = userGenerator.fireTimes();
+      assertTrue(expectedFireTimes == samples() || expectedFireTimes == samples() - 1,
+            "fireTimes() should be samples or samples-1, was " + expectedFireTimes);
       assertSamplesWithoutSkew(fireTimeSamples, userGenerator.fireTimes());
    }
 }

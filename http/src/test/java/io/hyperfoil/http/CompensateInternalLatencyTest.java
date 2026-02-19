@@ -93,6 +93,58 @@ public class CompensateInternalLatencyTest extends BaseHttpScenarioTest {
    }
 
    @Test
+   public void testCompensatedResponseTimesAreNonNegative() {
+      benchmarkBuilder.plugin(HttpPluginBuilder.class).ergonomics()
+            .compensateInternalLatency(true);
+
+      LongList responseTimes = new LongList(RATE * 5);
+
+      // No sleep here — fast localhost responses (~1ms) complete well within the
+      // 100ms fire-time-ahead offset, exposing negative response times when the
+      // FunctionalRateGenerator fires sessions with future timestamps.
+      // @formatter:off
+      benchmarkBuilder.addPhase("test")
+            .constantRate(RATE)
+            .variance(false)
+            .duration(DURATION_MS)
+            .maxSessions(RATE * 5)
+            .scenario()
+            .initialSequence("request")
+               .step(SC).httpRequest(HttpMethod.GET)
+                  .path("/ping")
+                  .handler()
+                     .rawBytes(new RawBytesHandler() {
+                        @Override
+                        public void onRequest(Request request, ByteBuf buf, int offset, int length) {
+                        }
+
+                        @Override
+                        public void onResponse(Request request, ByteBuf buf, int offset, int length,
+                              boolean isLastPart) {
+                           if (isLastPart) {
+                              long responseTime = System.nanoTime() - request.startTimestampNanos();
+                              responseTimes.add(responseTime);
+                           }
+                        }
+                     })
+                  .endHandler()
+                  .endStep()
+            .endSequence();
+      // @formatter:on
+
+      runScenario();
+
+      long[] times = responseTimes.toArray();
+      assertThat(times.length).isGreaterThanOrEqualTo(RATE);
+
+      for (int i = 0; i < times.length; i++) {
+         assertThat(times[i])
+               .describedAs("response time[%d] should be non-negative", i)
+               .isGreaterThanOrEqualTo(0);
+      }
+   }
+
+   @Test
    public void testDisabledStartTimestampsInflatedByDelay() {
       long[] captured = runWithCompensation(false);
 

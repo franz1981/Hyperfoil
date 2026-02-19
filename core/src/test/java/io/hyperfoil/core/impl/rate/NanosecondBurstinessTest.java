@@ -40,7 +40,13 @@ public class NanosecondBurstinessTest {
          counter.fireTimes = 0;
          long elapsed = generator.lastComputedFireTimeNs();
          fireTimes[i] = generator.computeNextFireTime(elapsed, counter);
-         assertEquals(1, counter.fireTimes, "Each call should produce exactly one fire time");
+         if (i == 0) {
+            // At elapsed=0, no fire times have elapsed yet; the returned fire time
+            // is the first future event (used for scheduling), so 0 fires.
+            assertEquals(0, counter.fireTimes, "First call at elapsed=0 should produce no fire times");
+         } else {
+            assertEquals(1, counter.fireTimes, "Each subsequent call should produce exactly one fire time");
+         }
       }
 
       // Verify proper sub-millisecond spacing
@@ -86,7 +92,11 @@ public class NanosecondBurstinessTest {
          counter.fireTimes = 0;
          long elapsed = generator.lastComputedFireTimeNs();
          fireTimes[i] = generator.computeNextFireTime(elapsed, counter);
-         assertEquals(1, counter.fireTimes);
+         if (i == 0) {
+            assertEquals(0, counter.fireTimes);
+         } else {
+            assertEquals(1, counter.fireTimes);
+         }
       }
 
       // All fire times should be distinct
@@ -97,8 +107,8 @@ public class NanosecondBurstinessTest {
                "Inter-arrival at index " + i + " should be " + expectedInterArrivalNs + " ns");
       }
 
-      // Verify total count is correct
-      assertEquals(samples, generator.fireTimes());
+      // Verify total count is correct (pastFireTimes doesn't count the future event)
+      assertEquals(samples - 1, generator.fireTimes());
    }
 
    /**
@@ -113,14 +123,36 @@ public class NanosecondBurstinessTest {
 
       // Simulate 10ms elapsed at once
       // computeFireTimes(10_000_000) = (long)(10_000_000 * 10_000 / 1e9) = 100
-      // FunctionalRateGenerator adds +1 for the "next" event → 101 total fire times
+      // FunctionalRateGenerator computes +1 for the "next" event for scheduling
+      // but does not fire it (it's ahead of elapsed), yielding 100 fired times
       counter.fireTimes = 0;
       long nextFireTime = generator.computeNextFireTime(10_000_000L, counter);
-      assertEquals(101, counter.fireTimes, "10ms at 10,000/sec should yield 101 fire times (100 past + 1 next)");
+      assertEquals(100, counter.fireTimes, "10ms at 10,000/sec should yield 100 fire times (future event not fired)");
 
       // The next fire time should be just past the 10ms mark
       assertTrue(nextFireTime > 10_000_000L, "Next fire time should be after 10ms");
       assertTrue(nextFireTime <= 10_200_000L, "Next fire time should be close to 10ms (within 0.2ms)");
+   }
+
+   /**
+    * Verify that no fire time emitted to the listener exceeds the elapsed time
+    * passed to computeNextFireTime(). Fire times ahead of elapsed should only
+    * be returned (for scheduling), not fired.
+    */
+   @Test
+   public void constantRateFireTimesDoNotExceedElapsed() {
+      final double rate = 10_000; // 10,000 users/sec
+      final RateGenerator generator = RateGenerator.constantRate(rate);
+
+      // Simulate 10ms elapsed at once
+      final long elapsedNs = 10_000_000L;
+      final java.util.List<Long> firedTimes = new java.util.ArrayList<>();
+      generator.computeNextFireTime(elapsedNs, firedTimes::add);
+
+      for (int i = 0; i < firedTimes.size(); i++) {
+         assertTrue(firedTimes.get(i) <= elapsedNs,
+               "Fire time[" + i + "] = " + firedTimes.get(i) + " exceeds elapsed " + elapsedNs);
+      }
    }
 
    /**
@@ -211,12 +243,12 @@ public class NanosecondBurstinessTest {
       final FireTimesCounter counter = new FireTimesCounter();
 
       // computeFireTimes(1_000_000_000) = (long)(1e9 * 5000 / 1e9) = 5000
-      // FunctionalRateGenerator adds +1 for the "next" event → 5001 total
+      // FunctionalRateGenerator computes +1 for scheduling but does not fire it
       counter.fireTimes = 0;
       generator.computeNextFireTime(durationNs, counter);
 
-      assertEquals(5_001, counter.fireTimes,
-            "1 second at 5,000/sec should produce 5,001 fire times (5,000 past + 1 next)");
+      assertEquals(5_000, counter.fireTimes,
+            "1 second at 5,000/sec should produce 5,000 fire times (future event not fired)");
    }
 
    /**

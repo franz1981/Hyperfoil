@@ -38,11 +38,15 @@ public class FireTimeGenerationTest {
          listener.fireTimes.clear();
          long elapsed = generator.lastComputedFireTimeNs();
          generator.computeNextFireTime(elapsed, listener);
-         assertEquals(1, listener.fireTimes.size(), "Each call should produce exactly one fire time");
-
-         long expectedFireTimeNs = (long) Math.ceil((i + 1) * 1_000_000.0);
-         assertEquals(expectedFireTimeNs, listener.fireTimes.get(0),
-               "Fire time at step " + i + " should match the expected scheduled time");
+         if (i == 0) {
+            // At elapsed=0, no fire times have elapsed yet
+            assertEquals(0, listener.fireTimes.size(), "First call at elapsed=0 should produce no fire times");
+         } else {
+            assertEquals(1, listener.fireTimes.size(), "Each subsequent call should produce exactly one fire time");
+            long expectedFireTimeNs = (long) Math.ceil(i * 1_000_000.0);
+            assertEquals(expectedFireTimeNs, listener.fireTimes.get(0),
+                  "Fire time at step " + i + " should match the expected scheduled time");
+         }
       }
    }
 
@@ -55,9 +59,9 @@ public class FireTimeGenerationTest {
       // Jump 1ms ahead — should generate ~10 fire times
       generator.computeNextFireTime(1_000_000L, listener);
 
-      // We expect 11 fire times (10 missed + 1 next)
-      assertEquals(11, listener.fireTimes.size(),
-            "Jumping 1ms at 10k/sec should produce 11 fire times");
+      // We expect 10 fire times (future event not fired, only returned for scheduling)
+      assertEquals(10, listener.fireTimes.size(),
+            "Jumping 1ms at 10k/sec should produce 10 fire times");
 
       // All fire times should be strictly increasing
       for (int i = 1; i < listener.fireTimes.size(); i++) {
